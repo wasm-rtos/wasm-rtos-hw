@@ -26,6 +26,10 @@ jobs:
       - name: The interpreter's header
         run: git clone --depth 1 https://github.com/wasm-rtos/wasm-rtos-vm "$RUNNER_TEMP/vm"
 
+      # The public API at 1.0 (docs/api-1.0.txt): names are only added.
+      - name: Check the API
+        run: python3 tools/check-api.py
+
       - name: Build alone
         run: |
           for cc in clang gcc; do
