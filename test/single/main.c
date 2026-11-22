@@ -1,12 +1,12 @@
 /*
- * A mini OS: the interpreter (wasm-rtos-vm), the devices (wasm-rtos-hw) and
- * the simple host, no kernel. One program runs in slices of fuel; its pins
- * are a pretend board here (a real port drives GPIO registers instead), and
- * the button is pressed once while the program waits for it. What it
- * prints through WASI goes to stdout (the interpreter's wm_wasi.c).
+ * The simple host's test: the interpreter (wasm-rtos-vm), the devices and
+ * single/hw_host_single.c, no kernel, run blink.c in slices of fuel. Its
+ * pins are pretend, and the button is pressed once while the program waits
+ * for it. The same system, explained, is the mini OS of wasm-rtos-examples.
  *
- * Build: this file, the devices' sources, single/hw_host_single.c and the
- * interpreter's source/wm_*.c, with -DHW_HAS_SYSTEM=0 (see build.sh).
+ * Built with the devices' sources, single/hw_host_single.c and the
+ * interpreter's source/wm_*.c, with -DHW_HAS_SYSTEM=0 (CI; build.sh remakes
+ * blink.wasm.h).
  */
 #include <stdio.h>
 #include <string.h>

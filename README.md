@@ -52,26 +52,13 @@ devices' imports, constants and helpers, nothing of an operating system.
 
 ### A mini OS: the interpreter, the devices and the simple host
 
-[`examples/mini`](examples/mini) runs a program that blinks a pin, waits for
-a button and prints through WASI, with no kernel:
-
-```c
-hw_single_init(now_ms, idle);
-hw_gpio_port_set(&gpio);
-hw_gpio_add_pin("led", 13, HW_GPIO_CAN_OUTPUT, 0);
-wm_instantiate(&instance, module, runtime, resolve, NULL); /* wm_wasi_resolve, then hw_single_resolve */
-hw_single_enter(1, runtime, wm_instance_memory(instance));
-wm_set_fuel(runtime, 20);
-for (r = wm_call(runtime, entry.as.func, NULL, &result); r == wm_fuel_exhausted; r = wm_resume(runtime, &result))
-{
-    hw_drivers_poll();
-    wm_set_fuel(runtime, 20);
-}
-```
-
-On AVR it takes 48 KB of flash and 1.4 KB of static RAM (39 KB and 0.9 KB
-without WASI): more than an Arduino Uno's 32 KB, so on 8-bit boards it is
-for an ATmega2560 or larger; CI builds it for one.
+The [mini-os example](https://github.com/wasm-rtos/wasm-rtos-examples/tree/main/mini-os)
+in wasm-rtos-examples runs a program that blinks a pin, waits for a button
+and prints through WASI, with no kernel: `hw_single_init`, the board's
+ports, `wm_instantiate` with `hw_single_resolve`, and a loop of fuel
+slices that calls `hw_drivers_poll`. On AVR it takes 48 KB of flash and
+1.4 KB of static RAM (39 KB and 0.9 KB without WASI): more than an Arduino
+Uno's 32 KB, so on 8-bit boards it is for an ATmega2560 or larger.
 
 ## Devices
 
@@ -110,6 +97,7 @@ each port.
 | `hw_driver.h` | drivers: their calls, the registry, what every driver's calls share |
 | `hw_host.h` | what the devices need from the operating system |
 | `single/hw_host_single.h` | a simple host: one program at a time, no scheduler |
+| `test/single/` | the simple host's test |
 | `include/wasm-rtos-hw.h` | for programs: the devices' imports |
 | `hw_isr.h` | flags and counters interrupt handlers set |
 | `hw_internal.h` | what one device file calls in another |
