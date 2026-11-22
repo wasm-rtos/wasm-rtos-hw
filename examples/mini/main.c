@@ -2,7 +2,8 @@
  * A mini OS: the interpreter (wasm-rtos-vm), the devices (wasm-rtos-hw) and
  * the simple host, no kernel. One program runs in slices of fuel; its pins
  * are a pretend board here (a real port drives GPIO registers instead), and
- * the button is pressed once while the program waits for it.
+ * the button is pressed once while the program waits for it. What it
+ * prints through WASI goes to stdout (the interpreter's wm_wasi.c).
  *
  * Build: this file, the devices' sources, single/hw_host_single.c and the
  * interpreter's source/wm_*.c, with -DHW_HAS_SYSTEM=0 (see build.sh).
@@ -12,6 +13,7 @@
 #include <time.h>
 
 #include "single/hw_host_single.h"
+#include "wm_wasi.h"
 #define BLINK_SECTION
 #include "blink.wasm.h"
 
@@ -68,6 +70,30 @@ static void idle(void)
     nanosleep(&t, NULL);
 }
 
+static uint32_t write_out(void* context, WmRuntime* runtime, uint32_t fd, const void* data, uint32_t length)
+{
+    (void)context, (void)runtime;
+    if (!data)
+        return 8; /* EBADF: no files */
+    fwrite(data, 1, length, fd == 2 ? stderr : stdout);
+    return 0;
+}
+
+static const WmWasiHost g_wasi = {.write = write_out};
+
+/* WASI calls from the interpreter's module, the rest from the devices. */
+static WmResult resolve(void* context, const char* module, uint32_t module_length, const char* name,
+                        uint32_t name_length, uint8_t kind, WmExtern* out)
+{
+    WmResult r = wm_wasi_resolve(&g_wasi, module, module_length, name, name_length, &out->as.func);
+    if (r || out->as.func)
+    {
+        out->kind = WM_EXTERN_FUNC;
+        return r;
+    }
+    return hw_single_resolve(context, module, module_length, name, name_length, kind, out);
+}
+
 int main(void)
 {
     static const HwGpioPort gpio = {NULL, pin_configure, pin_write, pin_read};
@@ -86,7 +112,7 @@ int main(void)
 
     runtime = wm_runtime_new(1024, 16);
     if ((r = wm_module_load(&module, blink_wasm, blink_wasm_len)) ||
-        (r = wm_instantiate(&instance, module, runtime, hw_single_resolve, NULL)) ||
+        (r = wm_instantiate(&instance, module, runtime, resolve, NULL)) ||
         (r = wm_instance_export(instance, "app_main", 8, &entry)))
     {
         printf("load: %s\n", r);
@@ -109,5 +135,6 @@ int main(void)
     wm_module_free(module);
     wm_runtime_free(runtime);
     hw_single_shutdown();
+    wm_wasi_free();
     return r != NULL || (int)result != 1 || g_led_on != 5;
 }
