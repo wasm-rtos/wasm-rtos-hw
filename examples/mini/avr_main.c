@@ -1,4 +1,4 @@
-/* The mini OS's size on an ATmega328P (Arduino Uno): main.c's system with a port of its pins left to the board. */
+/* The mini OS's size on an AVR (CI builds it for an ATmega2560: it does not fit an Uno's 32 KB): main.c's system with a port of its pins left to the board. */
 #include "single/hw_host_single.h"
 #include "wm_wasi.h"
 #include <avr/pgmspace.h>

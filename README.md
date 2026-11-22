@@ -69,9 +69,9 @@ for (r = wm_call(runtime, entry.as.func, NULL, &result); r == wm_fuel_exhausted;
 }
 ```
 
-On an ATmega328P it takes 48 KB of flash and 1.4 KB of static RAM (39 KB
-and 0.9 KB without WASI): more than an Arduino Uno's 32 KB, so on 8-bit
-boards it is for an ATmega2560 or larger.
+On AVR it takes 48 KB of flash and 1.4 KB of static RAM (39 KB and 0.9 KB
+without WASI): more than an Arduino Uno's 32 KB, so on 8-bit boards it is
+for an ATmega2560 or larger; CI builds it for one.
 
 ## Devices
 

@@ -12,7 +12,7 @@
   - `include/wasm-rtos-hw.h`: the program's header for the devices.
   - `single/`: a simple host, programs one at a time with no scheduler;
     `examples/mini` runs the interpreter and the devices without a kernel,
-    on a computer and (size only) on an ATmega328P, in CI.
+    on a computer and (size only) on an ATmega2560, in CI.
   - `HW_HAS_SYSTEM=0` leaves saving the system out of every driver.
   - `hw_isr.h`: one layer for what interrupt handlers set, also on AVR
     (no 32-bit atomics there), instead of five copies.
