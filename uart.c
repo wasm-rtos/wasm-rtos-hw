@@ -14,26 +14,6 @@
 #endif
 
 /* Counters that interrupt handlers bump and the library reads. */
-#if defined(__STDC_NO_ATOMICS__)
-typedef volatile uint32_t HwUartCounter;
-#define HW_UART_LOAD(value) (value)
-#define HW_UART_STORE(value, new_value) ((value) = (new_value))
-#define HW_UART_ADD(value, amount) ((void)((value) += (amount)))
-#define HW_UART_TAKE(value) hw_uart_take(&(value))
-static uint32_t hw_uart_take(HwUartCounter* value)
-{
-    uint32_t taken = *value;
-    *value = 0U;
-    return taken;
-}
-#else
-#include <stdatomic.h>
-typedef atomic_uint_fast32_t HwUartCounter;
-#define HW_UART_LOAD(value) ((uint32_t)atomic_load_explicit(&(value), memory_order_acquire))
-#define HW_UART_STORE(value, new_value) atomic_store_explicit(&(value), (new_value), memory_order_release)
-#define HW_UART_ADD(value, amount) ((void)atomic_fetch_add_explicit(&(value), (amount), memory_order_relaxed))
-#define HW_UART_TAKE(value) ((uint32_t)atomic_exchange_explicit(&(value), 0U, memory_order_acq_rel))
-#endif
 
 /* Allocated when the platform registers the port. */
 typedef struct HwUart
@@ -53,13 +33,13 @@ typedef struct HwUart
      * shutdown, so an interrupt handler never writes into freed memory.
      */
     uint8_t* rx;
-    HwUartCounter head;
-    HwUartCounter tail;
-    HwUartCounter errors;
+    HwIsrCount head;
+    HwIsrCount tail;
+    HwIsrCount errors;
     /* The last write did not fit; the port has signalled room since (from a handler). */
     uint8_t send_blocked;
-    HwUartCounter writable;
-    HwUartCounter received;
+    HwIsrCount writable;
+    HwIsrCount received;
 } HwUart;
 
 static struct
@@ -90,7 +70,7 @@ static HwUart* hw_uart_by_number(uint32_t number)
 
 static uint32_t hw_uart_available(HwUart* uart)
 {
-    return HW_UART_LOAD(uart->head) - HW_UART_LOAD(uart->tail);
+    return hw_isr_count_load(&(uart->head)) - hw_isr_count_load(&(uart->tail));
 }
 
 HwStatus hw_uart_port_set(const HwUartPort* port)
@@ -169,20 +149,20 @@ void hw_uart_receive(uint32_t number, const uint8_t* data, uint32_t size)
     {
         return;
     }
-    head = HW_UART_LOAD(uart->head);
+    head = hw_isr_count_load(&(uart->head));
     for (index = 0U; index < size; ++index)
     {
-        if (head - HW_UART_LOAD(uart->tail) >= HW_UART_RX_BUFFER)
+        if (head - hw_isr_count_load(&(uart->tail)) >= HW_UART_RX_BUFFER)
         {
             /* Full: the rest is lost, and counted. */
-            HW_UART_ADD(uart->errors, size - index);
+            hw_isr_count_add(&(uart->errors), size - index);
             break;
         }
         uart->rx[head % HW_UART_RX_BUFFER] = data[index];
         ++head;
     }
-    HW_UART_STORE(uart->head, head);
-    HW_UART_STORE(uart->received, 1U);
+    hw_isr_count_store(&(uart->head), head);
+    hw_isr_count_store(&(uart->received), 1U);
 }
 
 void hw_uart_error(uint32_t number)
@@ -190,7 +170,7 @@ void hw_uart_error(uint32_t number)
     HwUart* uart = hw_uart_by_number(number);
     if (uart != NULL && uart->owner != 0U)
     {
-        HW_UART_ADD(uart->errors, 1U);
+        hw_isr_count_add(&(uart->errors), 1U);
     }
 }
 
@@ -199,7 +179,7 @@ void hw_uart_writable(uint32_t number)
     HwUart* uart = hw_uart_by_number(number);
     if (uart != NULL)
     {
-        HW_UART_STORE(uart->writable, 1U);
+        hw_isr_count_store(&(uart->writable), 1U);
     }
 }
 
@@ -221,11 +201,11 @@ void hw_uart_poll(void)
         {
             continue;
         }
-        if (HW_UART_TAKE(uart->received) != 0U)
+        if (hw_isr_count_take(&(uart->received)) != 0U)
         {
             received = 1U;
         }
-        if (HW_UART_TAKE(uart->writable) != 0U && uart->send_blocked)
+        if (hw_isr_count_take(&(uart->writable)) != 0U && uart->send_blocked)
         {
             uart->send_blocked = 0U;
             hw_host_signal_wake(hw_driver_signal_key(&hw_uart_driver, index + 1U));
@@ -287,9 +267,9 @@ HwStatus hw_uart_open(const char* name, uint32_t length, uint32_t baud, uint32_t
         }
         uart->baud = actual != 0U ? actual : baud;
         uart->format = format;
-        HW_UART_STORE(uart->tail, HW_UART_LOAD(uart->head));
-        (void)HW_UART_TAKE(uart->errors);
-        (void)HW_UART_TAKE(uart->writable);
+        hw_isr_count_store(&(uart->tail), hw_isr_count_load(&(uart->head)));
+        (void)hw_isr_count_take(&(uart->errors));
+        (void)hw_isr_count_take(&(uart->writable));
         uart->send_blocked = 0U;
         uart->owner = hw_host_task_id();
         *out_id = index + 1U;
@@ -312,7 +292,7 @@ void hw_uart_close(uint32_t id)
     }
     uart->owner = 0U;
     uart->send_blocked = 0U;
-    HW_UART_STORE(uart->tail, HW_UART_LOAD(uart->head));
+    hw_isr_count_store(&(uart->tail), hw_isr_count_load(&(uart->head)));
 }
 
 /* Single consumer: only the owner's reads move tail. */
@@ -326,13 +306,13 @@ uint32_t hw_uart_read(uint32_t id, uint8_t* out, uint32_t max)
     {
         return 0U;
     }
-    tail = HW_UART_LOAD(uart->tail);
-    while (count < max && tail != HW_UART_LOAD(uart->head))
+    tail = hw_isr_count_load(&(uart->tail));
+    while (count < max && tail != hw_isr_count_load(&(uart->head)))
     {
         out[count++] = uart->rx[tail % HW_UART_RX_BUFFER];
         ++tail;
     }
-    HW_UART_STORE(uart->tail, tail);
+    hw_isr_count_store(&(uart->tail), tail);
     return count;
 }
 
@@ -355,7 +335,7 @@ HwStatus hw_uart_write(uint32_t id, const uint8_t* data, uint32_t size, uint32_t
         return HW_STATUS_OK;
     }
     /* Room signalled before this write does not count for it. */
-    (void)HW_UART_TAKE(uart->writable);
+    (void)hw_isr_count_take(&(uart->writable));
     status = g_uart.port.write(g_uart.port.context, uart->uart, data, size, out_written);
     if (status == HW_STATUS_OK && *out_written > size)
     {
@@ -375,7 +355,7 @@ HwStatus hw_uart_wait_writable(uint32_t id, uint32_t timeout_ms)
         return HW_STATUS_INVALID_ARGUMENT;
     }
     /* Room that came while the program was busy. */
-    if (HW_UART_TAKE(uart->writable) != 0U)
+    if (hw_isr_count_take(&(uart->writable)) != 0U)
     {
         uart->send_blocked = 0U;
     }
@@ -404,7 +384,7 @@ HwStatus hw_uart_get(uint32_t id, uint32_t property, uint32_t* out_value)
         case HW_UART_PROP_BAUD: *out_value = uart->baud; return HW_STATUS_OK;
         case HW_UART_PROP_AVAILABLE: *out_value = hw_uart_available(uart); return HW_STATUS_OK;
         /* Errors and lost bytes since the last time a program asked. */
-        case HW_UART_PROP_ERRORS: *out_value = HW_UART_TAKE(uart->errors); return HW_STATUS_OK;
+        case HW_UART_PROP_ERRORS: *out_value = hw_isr_count_take(&(uart->errors)); return HW_STATUS_OK;
         default: return HW_STATUS_UNSUPPORTED;
     }
 }
@@ -435,6 +415,7 @@ void hw_uart_shutdown(void)
  * and format and the bytes received and not yet read
  * ------------------------------------------------------------------------ */
 
+#if HW_HAS_SYSTEM
 static void hw_uart_save(HwSystemStream* stream)
 {
     uint32_t count = 0U;
@@ -455,8 +436,8 @@ static void hw_uart_save(HwSystemStream* stream)
         {
             continue;
         }
-        tail = HW_UART_LOAD(uart->tail);
-        head = HW_UART_LOAD(uart->head);
+        tail = hw_isr_count_load(&(uart->tail));
+        head = hw_isr_count_load(&(uart->head));
         hw_host_system_put32(stream, index + 1U);
         hw_host_system_put32(stream, uart->owner);
         hw_host_system_put_bytes(stream, uart->name, uart->name_length);
@@ -525,12 +506,12 @@ static void hw_uart_restore(HwSystemStream* stream)
         if (status == HW_STATUS_OK)
         {
             /* The bytes it had not read, first in its buffer. */
-            HW_UART_STORE(uart->tail, 0U);
+            hw_isr_count_store(&(uart->tail), 0U);
             hw_host_system_get(stream, uart->rx, unread);
-            HW_UART_STORE(uart->head, unread);
-            (void)HW_UART_TAKE(uart->errors);
+            hw_isr_count_store(&(uart->head), unread);
+            (void)hw_isr_count_take(&(uart->errors));
             /* The port is idle after the sleep: a program waiting for room gets it. */
-            HW_UART_STORE(uart->writable, 1U);
+            hw_isr_count_store(&(uart->writable), 1U);
             uart->send_blocked = send_blocked;
             uart->baud = actual != 0U ? actual : baud;
             uart->format = format;
@@ -543,6 +524,7 @@ static void hw_uart_restore(HwSystemStream* stream)
                          uart != NULL && g_uart.has_port ? "a device it held cannot be set up" : NULL);
     }
 }
+#endif
 
 /* ---------------------------------------------------------------------------
  * The uart interface for programs
@@ -698,7 +680,9 @@ const HwDriver hw_uart_driver =
     .ready = hw_uart_ready,
     .poll = hw_uart_poll,
     .shutdown = hw_uart_shutdown,
+#if HW_HAS_SYSTEM
     .save = hw_uart_save,
     .restore = hw_uart_restore,
+#endif
 };
 

@@ -500,6 +500,7 @@ void hw_input_shutdown(void)
  * events it has not read; keys held come back released
  * ------------------------------------------------------------------------ */
 
+#if HW_HAS_SYSTEM
 static void hw_input_save(HwSystemStream* stream)
 {
     uint32_t count = 0U;
@@ -602,6 +603,7 @@ static void hw_input_restore(HwSystemStream* stream)
         }
     }
 }
+#endif
 
 /* ---------------------------------------------------------------------------
  * The input interface for programs
@@ -709,7 +711,9 @@ const HwDriver hw_input_driver =
     .next_deadline_ms = hw_input_next_deadline_ms,
     .time = hw_input_update_time,
     .shutdown = hw_input_shutdown,
+#if HW_HAS_SYSTEM
     .save = hw_input_save,
     .restore = hw_input_restore,
+#endif
 };
 

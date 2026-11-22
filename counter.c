@@ -11,22 +11,6 @@
 #include <string.h>
 
 /* The hardware's watch point fired, recorded by interrupt handlers and taken by the library. */
-#if defined(__STDC_NO_ATOMICS__)
-typedef volatile uint8_t HwCounterFlag;
-#define HW_COUNTER_FLAG_SET(flag) ((flag) = 1U)
-#define HW_COUNTER_FLAG_TAKE(flag) hw_counter_flag_take(&(flag))
-static uint8_t hw_counter_flag_take(HwCounterFlag* flag)
-{
-    uint8_t value = *flag;
-    *flag = 0U;
-    return value;
-}
-#else
-#include <stdatomic.h>
-typedef atomic_uchar HwCounterFlag;
-#define HW_COUNTER_FLAG_SET(flag) atomic_store_explicit(&(flag), 1U, memory_order_release)
-#define HW_COUNTER_FLAG_TAKE(flag) atomic_exchange_explicit(&(flag), 0U, memory_order_acquire)
-#endif
 
 /* Allocated when the platform registers the counter. */
 typedef struct HwCounter
@@ -47,7 +31,7 @@ typedef struct HwCounter
     /* The count was outside the window when last read. */
     uint8_t outside;
     uint32_t last_poll_ms;
-    HwCounterFlag event;
+    HwIsrFlag event;
 } HwCounter;
 
 static struct
@@ -158,7 +142,7 @@ void hw_counter_event(uint32_t unit)
         HwCounter* counter = g_counter.counters[index];
         if (counter != NULL && counter->unit == unit)
         {
-            HW_COUNTER_FLAG_SET(counter->event);
+            hw_isr_flag_set(&(counter->event));
             return;
         }
     }
@@ -216,7 +200,7 @@ HwStatus hw_counter_open(const char* name, uint32_t length, uint32_t mode, uint3
     counter->high = INT32_MAX;
     counter->watching = 0U;
     counter->outside = 0U;
-    (void)HW_COUNTER_FLAG_TAKE(counter->event);
+    (void)hw_isr_flag_take(&(counter->event));
     *out_id = id;
     return HW_STATUS_OK;
 }
@@ -365,7 +349,7 @@ void hw_counter_poll(void)
         {
             continue;
         }
-        if (HW_COUNTER_FLAG_TAKE(counter->event))
+        if (hw_isr_flag_take(&(counter->event)))
         {
             due = 1U;
         }
@@ -430,6 +414,7 @@ void hw_counter_shutdown(void)
  * it counts, its window and the count
  * ------------------------------------------------------------------------ */
 
+#if HW_HAS_SYSTEM
 static void hw_counter_save(HwSystemStream* stream)
 {
     uint32_t count = 0U;
@@ -549,10 +534,11 @@ static void hw_counter_restore(HwSystemStream* stream)
         counter->outside = outside;
         /* Polled at the same moments as before the sleep. */
         counter->last_poll_ms = last_poll_ms;
-        (void)HW_COUNTER_FLAG_TAKE(counter->event);
+        (void)hw_isr_flag_take(&(counter->event));
         hw_host_system_device(stream, &hw_counter_driver, old_id, id, NULL);
     }
 }
+#endif
 
 /* ---------------------------------------------------------------------------
  * The counter interface for programs
@@ -682,7 +668,9 @@ const HwDriver hw_counter_driver =
     .poll = hw_counter_poll,
     .next_deadline_ms = hw_counter_next_deadline_ms,
     .shutdown = hw_counter_shutdown,
+#if HW_HAS_SYSTEM
     .save = hw_counter_save,
     .restore = hw_counter_restore,
+#endif
 };
 

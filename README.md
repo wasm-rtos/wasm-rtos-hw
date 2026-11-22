@@ -25,10 +25,13 @@ hw_i2c_add_bus("i2c0", 0, 400000);
 - **Programs never see the chip.** They open `"i2c0"` and address 0x76; on
   an ESP32, a Black Pill or in the browser the same `.wasm` reaches the same
   sensor.
-- **Any operating system.** What the devices need from one is declared in
-  `hw_host.h` and nothing else: the calling program, its memory, waiting,
-  time, handles and saving the whole system. The wasm-rtos kernel implements
-  it; a scheduler of your own can too.
+- **Any operating system, or none.** What the devices need from one is
+  declared in `hw_host.h` and nothing else: the calling program, its memory,
+  waiting, time, handles and saving the whole system. The wasm-rtos kernel
+  implements it; a scheduler of your own can too, and `single/` is a simple
+  host that runs programs one at a time with no scheduler at all.
+- **Binding is the library's.** `hw_driver_resolve` answers a program's
+  device imports for `wm_instantiate`; a host adds only its own calls.
 
 ## Building
 
@@ -40,6 +43,35 @@ cc -std=c11 -I<path to wasm-rtos-vm>/source -c *.c
 
 With the wasm-rtos kernel nothing more is needed: it has this library as a
 submodule in `hw/`.
+
+`HW_HAS_SYSTEM=0` leaves saving the whole system (deep sleep) out of every
+driver, for a host that has none.
+
+Programs include [`include/wasm-rtos-hw.h`](include/wasm-rtos-hw.h): the
+devices' imports, constants and helpers, nothing of an operating system.
+
+### A mini OS: the interpreter, the devices and the simple host
+
+[`examples/mini`](examples/mini) runs a program that blinks a pin, waits for
+a button and prints through WASI, with no kernel:
+
+```c
+hw_single_init(now_ms, idle);
+hw_gpio_port_set(&gpio);
+hw_gpio_add_pin("led", 13, HW_GPIO_CAN_OUTPUT, 0);
+wm_instantiate(&instance, module, runtime, resolve, NULL); /* wm_wasi_resolve, then hw_single_resolve */
+hw_single_enter(1, runtime, wm_instance_memory(instance));
+wm_set_fuel(runtime, 20);
+for (r = wm_call(runtime, entry.as.func, NULL, &result); r == wm_fuel_exhausted; r = wm_resume(runtime, &result))
+{
+    hw_drivers_poll();
+    wm_set_fuel(runtime, 20);
+}
+```
+
+On AVR it takes 48 KB of flash and 1.4 KB of static RAM (39 KB and 0.9 KB
+without WASI): more than an Arduino Uno's 32 KB, so on 8-bit boards it is
+for an ATmega2560 or larger; CI builds it for one.
 
 ## Devices
 
@@ -77,7 +109,11 @@ each port.
 | `hw.h` | ports and registration, for a board |
 | `hw_driver.h` | drivers: their calls, the registry, what every driver's calls share |
 | `hw_host.h` | what the devices need from the operating system |
+| `single/hw_host_single.h` | a simple host: one program at a time, no scheduler |
+| `include/wasm-rtos-hw.h` | for programs: the devices' imports |
+| `hw_isr.h` | flags and counters interrupt handlers set |
 | `hw_internal.h` | what one device file calls in another |
+| `docs/api-1.0.txt` | the public names at 1.0, checked by `tools/check-api.py` |
 
 ## License
 

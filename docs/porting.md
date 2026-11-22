@@ -238,3 +238,26 @@ whole system. The wasm-rtos kernel implements it; a scheduler of your own
 that implements the same functions and calls `hw_drivers_poll` before each
 scheduling decision (and the other `hw_drivers_*` when its clock moves, a
 task ends and at shutdown) gets every device and port here as they are.
+
+The wasm-rtos kernel's device imports are bound by `hw_driver_resolve`
+(a `WmResolver`): a host chains it after its own calls. Handles are the
+host's (`hw_host_handle_*`), and `handle.close` and `wait.any` are the
+host's calls too, since they take any handle.
+
+### The simple host
+
+`single/hw_host_single.c` implements `hw_host.h` for programs run one at a
+time: a wait polls the drivers (`hw_drivers_time`, `hw_drivers_poll`) and
+calls the host's `idle` until the device answers or the time is up; it has
+its own handle table (`HW_SINGLE_HANDLES`, 16) and gives `handle.close` and
+`wait.any` through `hw_single_resolve`. Build the devices with
+`-DHW_HAS_SYSTEM=0`: it saves no system. `examples/mini` is the whole of a
+system with it.
+
+### Interrupt handlers
+
+A port's interrupt handler calls the library (`hw_gpio_edge`,
+`hw_uart_receive` and the others), which records it in values of
+`hw_isr.h`: C11 atomics where the compiler has them, a section with
+interrupts off on AVR. A port with another way to keep its handlers out
+defines `HW_ISR_ENTER()` and `HW_ISR_EXIT()`.

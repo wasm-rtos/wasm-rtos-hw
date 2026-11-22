@@ -92,6 +92,16 @@ typedef struct HwDriver
     void (*restore)(HwSystemStream* stream);
 } HwDriver;
 
+/*
+ * Saving the whole system for deep sleep (each driver's save and restore,
+ * and the hw_host_system_* calls a host gives for them). 0 for a host that
+ * does not save the system: the code is left out (an 8-bit board), and a
+ * task holding a device could not be saved anyway.
+ */
+#ifndef HW_HAS_SYSTEM
+#define HW_HAS_SYSTEM 1
+#endif
+
 /* gpio, whose pins other drivers take (a PWM output, a chip select...). */
 extern const HwDriver hw_gpio_driver;
 
@@ -165,6 +175,32 @@ uint32_t hw_drivers_next_deadline_ms(void);
 void hw_drivers_time(void);
 void hw_drivers_finish_task(uint32_t task_id);
 void hw_drivers_shutdown(void);
+
+/* ---- Binding programs' imports to the drivers' calls ----------------------------- */
+
+/* Programs import a device interface as "wasm-rtos:kernel/<interface>@1.<minor>.0". */
+#define HW_KERNEL_PREFIX "wasm-rtos:kernel/"
+/* Whether module is such a name: 1, with the interface (in module) and the minor the program names. */
+int hw_abi_module(const char* module, uint32_t length, const char** out_interface, uint32_t* out_interface_length,
+                  uint32_t* out_minor);
+/*
+ * The driver's call an import names, for a program built for minor: it, or
+ * NULL. *out_offered says whether some driver offers the interface at all
+ * (then a missing call is one added after this build, or none).
+ */
+const HwDriverCall* hw_driver_find_call(const char* interface, uint32_t interface_length, const char* name,
+                                        uint32_t name_length, uint32_t minor, int* out_offered);
+/* The interpreter's types of a call's signature ("i(iI*)"; v: no result): 0, or -1 for one this cannot read. */
+int hw_signature(const char* signature, uint8_t params[16], uint32_t* out_param_count, uint8_t* out_result,
+                 uint32_t* out_result_count);
+/*
+ * A resolver for wm_instantiate (wm.h) for a host of its own: binds the
+ * devices' imports to their drivers' calls, each made into an interpreter
+ * function once and kept until hw_drivers_shutdown. Any other import, and
+ * a device call no driver has, is left unbound (calling it traps).
+ */
+WmResult hw_driver_resolve(void* context, const char* module, uint32_t module_length, const char* name,
+                           uint32_t name_length, uint8_t kind, WmExtern* out);
 
 /* What a call may leave unused. */
 #define HW_ABI_UNUSED() \
