@@ -9,24 +9,6 @@
 #include <string.h>
 
 /* Edge counts are bumped from interrupt handlers and taken by the library. */
-#if defined(__STDC_NO_ATOMICS__)
-typedef volatile uint32_t HwGpioCounter;
-#define HW_GPIO_COUNT(counter) ((void)++(counter))
-static uint32_t hw_gpio_take_counter(HwGpioCounter* counter)
-{
-    uint32_t value = *counter;
-    *counter = 0U;
-    return value;
-}
-#else
-#include <stdatomic.h>
-typedef atomic_uint_fast32_t HwGpioCounter;
-#define HW_GPIO_COUNT(counter) ((void)atomic_fetch_add_explicit(&(counter), 1U, memory_order_relaxed))
-static uint32_t hw_gpio_take_counter(HwGpioCounter* counter)
-{
-    return (uint32_t)atomic_exchange_explicit(counter, 0U, memory_order_relaxed);
-}
-#endif
 
 #define HW_GPIO_PORT_MODE (HW_GPIO_OUTPUT | HW_GPIO_PULL_UP | HW_GPIO_PULL_DOWN | HW_GPIO_OPEN_DRAIN)
 #define HW_GPIO_GUEST_FLAGS (HW_GPIO_PORT_MODE | HW_GPIO_GUEST_ACTIVE_LOW | HW_GPIO_INIT_HIGH)
@@ -47,8 +29,8 @@ typedef struct HwGpioPin
     uint8_t level;
     uint32_t watch;
     uint32_t events;
-    HwGpioCounter rising;
-    HwGpioCounter falling;
+    HwIsrCount rising;
+    HwIsrCount falling;
 } HwGpioPin;
 
 /* A name and the pin it means, allocated with the name's own length. */
@@ -257,11 +239,11 @@ void hw_gpio_edge(uint32_t pin, uint32_t edges)
         {
             if ((edges & HW_GPIO_EDGE_RISING) != 0U)
             {
-                HW_GPIO_COUNT(slot->rising);
+                hw_isr_count_add(&(slot->rising), 1U);
             }
             if ((edges & HW_GPIO_EDGE_FALLING) != 0U)
             {
-                HW_GPIO_COUNT(slot->falling);
+                hw_isr_count_add(&(slot->falling), 1U);
             }
             return;
         }
@@ -298,8 +280,8 @@ void hw_gpio_poll(void)
         {
             continue;
         }
-        rising = hw_gpio_take_counter(&slot->rising);
-        falling = hw_gpio_take_counter(&slot->falling);
+        rising = hw_isr_count_take(&slot->rising);
+        falling = hw_isr_count_take(&slot->falling);
         if (slot->owner == 0U || slot->watch == 0U)
         {
             continue;
@@ -352,8 +334,8 @@ HwStatus hw_gpio_open(const char* name, uint32_t length, uint32_t flags, uint32_
     pin->level = (flags & HW_GPIO_INIT_HIGH) != 0U ? 1U : 0U;
     pin->watch = 0U;
     pin->events = 0U;
-    (void)hw_gpio_take_counter(&pin->rising);
-    (void)hw_gpio_take_counter(&pin->falling);
+    (void)hw_isr_count_take(&pin->rising);
+    (void)hw_isr_count_take(&pin->falling);
     status = hw_gpio_configure(pin);
     if (status != HW_STATUS_OK)
     {
@@ -526,8 +508,8 @@ HwStatus hw_gpio_watch(uint32_t id, uint32_t edges)
     }
     /* Edges from before the watch began do not count. */
     pin->events = 0U;
-    (void)hw_gpio_take_counter(&pin->rising);
-    (void)hw_gpio_take_counter(&pin->falling);
+    (void)hw_isr_count_take(&pin->rising);
+    (void)hw_isr_count_take(&pin->falling);
     return HW_STATUS_OK;
 }
 
@@ -594,6 +576,7 @@ uint32_t hw_gpio_wake_pins(HwGpioWake* out, uint32_t max)
  * Saving the whole system: every pin a task holds, by its first name
  * ------------------------------------------------------------------------ */
 
+#if HW_HAS_SYSTEM
 static void hw_gpio_save(HwSystemStream* stream)
 {
     uint32_t count = 0U;
@@ -676,8 +659,8 @@ static void hw_gpio_restore(HwSystemStream* stream)
             : flags;
         pin->level = level;
         pin->watch = watch;
-        (void)hw_gpio_take_counter(&pin->rising);
-        (void)hw_gpio_take_counter(&pin->falling);
+        (void)hw_isr_count_take(&pin->rising);
+        (void)hw_isr_count_take(&pin->falling);
         if (hw_gpio_configure(pin) != HW_STATUS_OK)
         {
             pin->flags = 0U;
@@ -691,6 +674,7 @@ static void hw_gpio_restore(HwSystemStream* stream)
         hw_host_system_device(stream, &hw_gpio_driver, old_id, entry->pin, NULL);
     }
 }
+#endif
 
 /* ---------------------------------------------------------------------------
  * The gpio interface for programs
@@ -833,6 +817,8 @@ const HwDriver hw_gpio_driver =
     .ready = hw_gpio_ready,
     .poll = hw_gpio_poll,
     .shutdown = hw_gpio_shutdown,
+#if HW_HAS_SYSTEM
     .save = hw_gpio_save,
     .restore = hw_gpio_restore,
+#endif
 };

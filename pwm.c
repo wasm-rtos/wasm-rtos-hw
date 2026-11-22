@@ -194,6 +194,7 @@ void hw_pwm_shutdown(void)
  * frequency and duty
  * ------------------------------------------------------------------------ */
 
+#if HW_HAS_SYSTEM
 static void hw_pwm_save(HwSystemStream* stream)
 {
     uint32_t count = 0U;
@@ -272,6 +273,7 @@ static void hw_pwm_restore(HwSystemStream* stream)
         hw_host_system_device(stream, &hw_pwm_driver, id, id, NULL);
     }
 }
+#endif
 
 /* ---------------------------------------------------------------------------
  * The pwm interface for programs
@@ -370,7 +372,9 @@ const HwDriver hw_pwm_driver =
     .call_count = (uint32_t)(sizeof(hw_pwm_calls) / sizeof(hw_pwm_calls[0])),
     .close = hw_pwm_close,
     .shutdown = hw_pwm_shutdown,
+#if HW_HAS_SYSTEM
     .save = hw_pwm_save,
     .restore = hw_pwm_restore,
+#endif
 };
 

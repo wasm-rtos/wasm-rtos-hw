@@ -92,6 +92,16 @@ typedef struct HwDriver
     void (*restore)(HwSystemStream* stream);
 } HwDriver;
 
+/*
+ * Saving the whole system for deep sleep (each driver's save and restore,
+ * and the hw_host_system_* calls a host gives for them). 0 for a host that
+ * does not save the system: the code is left out (an 8-bit board), and a
+ * task holding a device could not be saved anyway.
+ */
+#ifndef HW_HAS_SYSTEM
+#define HW_HAS_SYSTEM 1
+#endif
+
 /* gpio, whose pins other drivers take (a PWM output, a chip select...). */
 extern const HwDriver hw_gpio_driver;
 

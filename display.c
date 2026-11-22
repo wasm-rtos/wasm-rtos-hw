@@ -383,6 +383,7 @@ void hw_display_shutdown(void)
  * brightness; only one that keeps its picture through the sleep
  * ------------------------------------------------------------------------ */
 
+#if HW_HAS_SYSTEM
 static void hw_display_save(HwSystemStream* stream)
 {
     uint32_t count = 0U;
@@ -462,6 +463,7 @@ static void hw_display_restore(HwSystemStream* stream)
         hw_host_system_device(stream, &hw_display_driver, old_id, (uint32_t)(display - g_display.displays + 1), NULL);
     }
 }
+#endif
 
 /* ---------------------------------------------------------------------------
  * The display interface for programs
@@ -622,7 +624,9 @@ const HwDriver hw_display_driver =
     .call_count = (uint32_t)(sizeof(hw_display_calls) / sizeof(hw_display_calls[0])),
     .close = hw_display_close,
     .shutdown = hw_display_shutdown,
+#if HW_HAS_SYSTEM
     .save = hw_display_save,
     .restore = hw_display_restore,
+#endif
 };
 

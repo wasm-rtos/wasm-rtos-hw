@@ -29,9 +29,32 @@ jobs:
       - name: Build alone
         run: |
           for cc in clang gcc; do
-            for file in *.c; do
-              $cc -std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -Werror -I"$RUNNER_TEMP/vm/source" \
-                -c "$file" -o "$RUNNER_TEMP/$file.o" || exit 1
+            for system in 1 0; do
+              for file in *.c; do
+                $cc -std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -Werror -DHW_HAS_SYSTEM=$system \
+                  -I"$RUNNER_TEMP/vm/source" -c "$file" -o "$RUNNER_TEMP/$file.o" || exit 1
+              done
             done
+            $cc -std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -Werror -DHW_HAS_SYSTEM=0 \
+              -I"$RUNNER_TEMP/vm/source" -c single/hw_host_single.c -o "$RUNNER_TEMP/single.o" || exit 1
             echo "ok   $cc"
           done
+
+      # The interpreter, the devices and the simple host: a mini OS, no kernel.
+      - name: The mini OS runs
+        run: |
+          cd examples/mini
+          cc -std=c11 -D_POSIX_C_SOURCE=200809L -O1 -g -fsanitize=address,undefined -Wall -Wextra -Werror \
+            -Wno-unused-parameter -DHW_HAS_SYSTEM=0 -I"$RUNNER_TEMP/vm/source" -I../.. \
+            main.c ../../*.c ../../single/*.c "$RUNNER_TEMP"/vm/source/wm_*.c -lm -o "$RUNNER_TEMP/mini"
+          "$RUNNER_TEMP/mini"
+
+      - name: The mini OS on an ATmega328P (size)
+        run: |
+          sudo apt-get install -y gcc-avr avr-libc >/dev/null
+          cd examples/mini
+          avr-gcc -mmcu=atmega328p -Os -std=gnu99 -ffunction-sections -fdata-sections -DHW_HAS_SYSTEM=0 \
+            -DWM_HAS_VALIDATION=0 -DWM_HAS_I64=0 -DWM_HAS_REF_TYPES=0 -DWM_PROGRAM_IN_FLASH \
+            -I"$RUNNER_TEMP/vm/source" -I../.. -Wl,--gc-sections \
+            avr_main.c ../../*.c ../../single/*.c "$RUNNER_TEMP"/vm/source/wm_*.c -o "$RUNNER_TEMP/mini.elf"
+          avr-size "$RUNNER_TEMP/mini.elf"

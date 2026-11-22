@@ -207,6 +207,7 @@ void hw_adc_shutdown(void)
  * Saving the whole system: every channel by name, so handles find theirs
  * ------------------------------------------------------------------------ */
 
+#if HW_HAS_SYSTEM
 static void hw_adc_save(HwSystemStream* stream)
 {
     uint32_t count = 0U;
@@ -254,6 +255,7 @@ static void hw_adc_restore(HwSystemStream* stream)
         }
     }
 }
+#endif
 
 /* ---------------------------------------------------------------------------
  * The adc interface for programs
@@ -355,7 +357,9 @@ const HwDriver hw_adc_driver =
     .calls = hw_adc_calls,
     .call_count = (uint32_t)(sizeof(hw_adc_calls) / sizeof(hw_adc_calls[0])),
     .shutdown = hw_adc_shutdown,
+#if HW_HAS_SYSTEM
     .save = hw_adc_save,
     .restore = hw_adc_restore,
+#endif
 };
 

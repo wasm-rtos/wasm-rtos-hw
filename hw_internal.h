@@ -4,6 +4,7 @@
 /* Inside the device library: what one device file calls in another. */
 
 #include "hw_host.h"
+#include "hw_isr.h"
 
 /* ---- GPIO for programs (gpio.c) -------------------------------------------- */
 

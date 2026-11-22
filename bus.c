@@ -11,22 +11,6 @@
 #include <string.h>
 
 /* A background transfer's end is recorded by interrupt handlers and taken by the library. */
-#if defined(__STDC_NO_ATOMICS__)
-typedef volatile uint8_t HwBusFlag;
-#define HW_BUS_FLAG_SET(flag) ((flag) = 1U)
-#define HW_BUS_FLAG_TAKE(flag) hw_bus_flag_take(&(flag))
-static uint8_t hw_bus_flag_take(HwBusFlag* flag)
-{
-    uint8_t value = *flag;
-    *flag = 0U;
-    return value;
-}
-#else
-#include <stdatomic.h>
-typedef atomic_uchar HwBusFlag;
-#define HW_BUS_FLAG_SET(flag) atomic_store_explicit(&(flag), 1U, memory_order_release)
-#define HW_BUS_FLAG_TAKE(flag) atomic_exchange_explicit(&(flag), 0U, memory_order_acquire)
-#endif
 
 /* Longest delay op, in microseconds. */
 #define HW_SPI_MAX_DELAY_US 65535U
@@ -54,7 +38,7 @@ typedef struct HwBus
         /* The library's RESET and match ROM come first. */
         HwOneWireOp onewire[HW_BUS_MAX_OPS + 2U];
     } ops;
-    HwBusFlag done;
+    HwIsrFlag done;
     volatile HwStatus result;
     /* Copies of the program's buffers the port works on, written back when the transfer ends. */
     HwGuestKept* kept;
@@ -305,7 +289,7 @@ static HwStatus hw_bus_start(uint8_t kind, HwBus* bus, uint32_t device, uint32_t
     bus->mode = mode;
     bus->cs = cs;
     bus->count = count;
-    (void)HW_BUS_FLAG_TAKE(bus->done);
+    (void)hw_isr_flag_take(&(bus->done));
 
     if (cs != 0U)
     {
@@ -343,14 +327,14 @@ static void hw_bus_finish(uint8_t kind, HwBus* bus)
     {
         return;
     }
-    if (!HW_BUS_FLAG_TAKE(bus->done))
+    if (!hw_isr_flag_take(&(bus->done)))
     {
         if (finish != NULL)
         {
             finish(hw_bus_port_context(kind), bus->bus);
         }
         /* A port that did not report even now has failed the transfer. */
-        if (!HW_BUS_FLAG_TAKE(bus->done))
+        if (!hw_isr_flag_take(&(bus->done)))
         {
             bus->result = HW_STATUS_BUS_ERROR;
         }
@@ -365,7 +349,7 @@ void hw_bus_complete(uint32_t kind, uint32_t number, HwStatus status)
     if (bus != NULL && bus->busy)
     {
         bus->result = status;
-        HW_BUS_FLAG_SET(bus->done);
+        hw_isr_flag_set(&(bus->done));
     }
 }
 
@@ -1273,7 +1257,7 @@ static void hw_bus_each(uint8_t kind, void (*visit)(uint8_t kind, HwBus* bus, ui
 static void hw_bus_poll_one(uint8_t kind, HwBus* bus, uint32_t task_id)
 {
     (void)task_id;
-    if (bus->busy && HW_BUS_FLAG_TAKE(bus->done))
+    if (bus->busy && hw_isr_flag_take(&(bus->done)))
     {
         hw_bus_deliver(kind, bus);
     }
@@ -1315,6 +1299,7 @@ static void hw_bus_finish_all(uint8_t kind)
  * slice.
  * ------------------------------------------------------------------------ */
 
+#if HW_HAS_SYSTEM
 /* Whether a transfer is on its way on one of the buses; the save fails then. */
 static uint8_t hw_bus_save_busy(HwSystemStream* stream, HwBus** buses, uint32_t max)
 {
@@ -1344,7 +1329,9 @@ static HwBus* hw_bus_restore_find(HwSystemStream* stream, HwBus** buses, uint32_
     }
     return bus;
 }
+#endif
 
+#if HW_HAS_SYSTEM
 static void hw_i2c_save(HwSystemStream* stream)
 {
     uint32_t count = 0U;
@@ -1404,6 +1391,7 @@ static void hw_i2c_restore(HwSystemStream* stream)
         hw_host_system_device(stream, &hw_i2c_driver, id, id, NULL);
     }
 }
+#endif
 
 /* ---------------------------------------------------------------------------
  * The i2c interface for programs
@@ -1522,10 +1510,13 @@ const HwDriver hw_i2c_driver =
     .poll = hw_i2c_poll,
     .finish_task = hw_i2c_finish_task,
     .shutdown = hw_i2c_shutdown,
+#if HW_HAS_SYSTEM
     .save = hw_i2c_save,
     .restore = hw_i2c_restore,
+#endif
 };
 
+#if HW_HAS_SYSTEM
 static void hw_spi_save(HwSystemStream* stream)
 {
     uint32_t count = 0U;
@@ -1605,6 +1596,7 @@ static void hw_spi_restore(HwSystemStream* stream)
         hw_host_system_device(stream, &hw_spi_driver, id, id, NULL);
     }
 }
+#endif
 
 /* ---------------------------------------------------------------------------
  * The spi interface for programs
@@ -1746,10 +1738,13 @@ const HwDriver hw_spi_driver =
     .poll = hw_spi_poll,
     .finish_task = hw_spi_finish_task,
     .shutdown = hw_spi_shutdown,
+#if HW_HAS_SYSTEM
     .save = hw_spi_save,
     .restore = hw_spi_restore,
+#endif
 };
 
+#if HW_HAS_SYSTEM
 static void hw_onewire_save(HwSystemStream* stream)
 {
     uint32_t count = 0U;
@@ -1810,6 +1805,7 @@ static void hw_onewire_restore(HwSystemStream* stream)
         hw_host_system_device(stream, &hw_onewire_driver, id, id, NULL);
     }
 }
+#endif
 
 /* ---------------------------------------------------------------------------
  * The onewire interface for programs
@@ -1983,7 +1979,9 @@ const HwDriver hw_onewire_driver =
     .poll = hw_onewire_poll,
     .finish_task = hw_onewire_finish_task,
     .shutdown = hw_onewire_shutdown,
+#if HW_HAS_SYSTEM
     .save = hw_onewire_save,
     .restore = hw_onewire_restore,
+#endif
 };
 

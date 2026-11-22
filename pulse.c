@@ -11,22 +11,6 @@
 #include <string.h>
 
 /* The end of background work, recorded by interrupt handlers and taken by the library. */
-#if defined(__STDC_NO_ATOMICS__)
-typedef volatile uint8_t HwPulseFlag;
-#define HW_PULSE_FLAG_SET(flag) ((flag) = 1U)
-#define HW_PULSE_FLAG_TAKE(flag) hw_pulse_flag_take(&(flag))
-static uint8_t hw_pulse_flag_take(HwPulseFlag* flag)
-{
-    uint8_t value = *flag;
-    *flag = 0U;
-    return value;
-}
-#else
-#include <stdatomic.h>
-typedef atomic_uchar HwPulseFlag;
-#define HW_PULSE_FLAG_SET(flag) atomic_store_explicit(&(flag), 1U, memory_order_release)
-#define HW_PULSE_FLAG_TAKE(flag) atomic_exchange_explicit(&(flag), 0U, memory_order_acquire)
-#endif
 
 /* Allocated when a program opens the pin. */
 typedef struct HwPulseChannel
@@ -36,7 +20,7 @@ typedef struct HwPulseChannel
     uint32_t flags;
     uint8_t busy;
     uint32_t task_id;
-    HwPulseFlag done;
+    HwIsrFlag done;
     volatile HwStatus result;
     volatile uint32_t count;
     /* The program's buffer for a capture, in items; 0 when sending. */
@@ -92,7 +76,7 @@ void hw_pulse_complete(uint32_t pin, HwStatus status, uint32_t count)
         {
             channel->result = status;
             channel->count = count;
-            HW_PULSE_FLAG_SET(channel->done);
+            hw_isr_flag_set(&(channel->done));
             return;
         }
     }
@@ -117,10 +101,10 @@ static void hw_pulse_finish(HwPulseChannel* channel)
     {
         return;
     }
-    if (!HW_PULSE_FLAG_TAKE(channel->done))
+    if (!hw_isr_flag_take(&(channel->done)))
     {
         g_pulse.port.finish(g_pulse.port.context, channel->pin);
-        if (!HW_PULSE_FLAG_TAKE(channel->done))
+        if (!hw_isr_flag_take(&(channel->done)))
         {
             channel->result = HW_STATUS_BUS_ERROR;
             channel->count = 0U;
@@ -136,7 +120,7 @@ void hw_pulse_poll(void)
     for (index = 0U; index < HW_PULSE_MAX; ++index)
     {
         HwPulseChannel* channel = g_pulse.channels[index];
-        if (channel != NULL && channel->busy && HW_PULSE_FLAG_TAKE(channel->done))
+        if (channel != NULL && channel->busy && hw_isr_flag_take(&(channel->done)))
         {
             hw_pulse_deliver(channel);
         }
@@ -363,6 +347,7 @@ void hw_pulse_shutdown(void)
  * direction and idle level
  * ------------------------------------------------------------------------ */
 
+#if HW_HAS_SYSTEM
 static void hw_pulse_save(HwSystemStream* stream)
 {
     uint32_t count = 0U;
@@ -441,6 +426,7 @@ static void hw_pulse_restore(HwSystemStream* stream)
         hw_host_system_device(stream, &hw_pulse_driver, id, id, NULL);
     }
 }
+#endif
 
 /* ---------------------------------------------------------------------------
  * The pulse interface for programs
@@ -643,7 +629,9 @@ const HwDriver hw_pulse_driver =
     .poll = hw_pulse_poll,
     .finish_task = hw_pulse_finish_task,
     .shutdown = hw_pulse_shutdown,
+#if HW_HAS_SYSTEM
     .save = hw_pulse_save,
     .restore = hw_pulse_restore,
+#endif
 };
 

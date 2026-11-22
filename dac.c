@@ -277,6 +277,7 @@ void hw_dac_shutdown(void)
  * value written
  * ------------------------------------------------------------------------ */
 
+#if HW_HAS_SYSTEM
 static void hw_dac_save(HwSystemStream* stream)
 {
     uint32_t count = 0U;
@@ -379,6 +380,7 @@ static void hw_dac_restore(HwSystemStream* stream)
         hw_host_system_device(stream, &hw_dac_driver, old_id, (uint32_t)(index), NULL);
     }
 }
+#endif
 
 /* ---------------------------------------------------------------------------
  * The dac interface for programs
@@ -471,7 +473,9 @@ const HwDriver hw_dac_driver =
     .call_count = (uint32_t)(sizeof(hw_dac_calls) / sizeof(hw_dac_calls[0])),
     .close = hw_dac_close,
     .shutdown = hw_dac_shutdown,
+#if HW_HAS_SYSTEM
     .save = hw_dac_save,
     .restore = hw_dac_restore,
+#endif
 };
 
