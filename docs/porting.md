@@ -251,8 +251,8 @@ time: a wait polls the drivers (`hw_drivers_time`, `hw_drivers_poll`) and
 calls the host's `idle` until the device answers or the time is up; it has
 its own handle table (`HW_SINGLE_HANDLES`, 16) and gives `handle.close` and
 `wait.any` through `hw_single_resolve`. Build the devices with
-`-DHW_HAS_SYSTEM=0`: it saves no system. `examples/mini` is the whole of a
-system with it.
+`-DHW_HAS_SYSTEM=0`: it saves no system. The mini-os example of
+wasm-rtos-examples is the whole of a system with it.
 
 ### Interrupt handlers
 

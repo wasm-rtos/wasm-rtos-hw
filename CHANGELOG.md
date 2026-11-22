@@ -10,9 +10,9 @@
     `hw_driver_find_call`, `hw_abi_module` and `hw_signature` for a host
     that makes its functions itself.
   - `include/wasm-rtos-hw.h`: the program's header for the devices.
-  - `single/`: a simple host, programs one at a time with no scheduler;
-    `examples/mini` runs the interpreter and the devices without a kernel,
-    on a computer and (size only) on an ATmega2560, in CI.
+  - `single/`: a simple host, programs one at a time with no scheduler,
+    tested in CI (`test/single`); the mini OS built on it is in
+    wasm-rtos-examples. The devices build for an ATmega328P in CI.
   - `HW_HAS_SYSTEM=0` leaves saving the system out of every driver.
   - `hw_isr.h`: one layer for what interrupt handlers set, also on AVR
     (no 32-bit atomics there), instead of five copies.

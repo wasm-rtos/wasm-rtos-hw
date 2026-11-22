@@ -44,21 +44,22 @@ jobs:
             echo "ok   $cc"
           done
 
-      # The interpreter, the devices and the simple host: a mini OS, no kernel.
-      - name: The mini OS runs
+      # The simple host runs a program on the interpreter and the devices, no
+      # kernel (the whole mini OS is in wasm-rtos-examples).
+      - name: The simple host
         run: |
-          cd examples/mini
+          cd test/single
           cc -std=c11 -D_POSIX_C_SOURCE=200809L -O1 -g -fsanitize=address,undefined -Wall -Wextra -Werror \
             -Wno-unused-parameter -DHW_HAS_SYSTEM=0 -I"$RUNNER_TEMP/vm/source" -I../.. \
-            main.c ../../*.c ../../single/*.c "$RUNNER_TEMP"/vm/source/wm_*.c -lm -o "$RUNNER_TEMP/mini"
-          "$RUNNER_TEMP/mini"
+            main.c ../../*.c ../../single/*.c "$RUNNER_TEMP"/vm/source/wm_*.c -lm -o "$RUNNER_TEMP/single"
+          "$RUNNER_TEMP/single"
 
-      - name: The mini OS on an ATmega2560 (size; more than an Uno's 32 KB)
+      # AVR has no 32-bit atomics: the devices and the simple host build there (hw_isr.h).
+      - name: Build for an ATmega328P
         run: |
           sudo apt-get install -y gcc-avr avr-libc >/dev/null
-          cd examples/mini
-          avr-gcc -mmcu=atmega2560 -Os -std=gnu99 -ffunction-sections -fdata-sections -DHW_HAS_SYSTEM=0 \
-            -DWM_HAS_VALIDATION=0 -DWM_HAS_I64=0 -DWM_HAS_REF_TYPES=0 -DWM_PROGRAM_IN_FLASH \
-            -I"$RUNNER_TEMP/vm/source" -I../.. -Wl,--gc-sections \
-            avr_main.c ../../*.c ../../single/*.c "$RUNNER_TEMP"/vm/source/wm_*.c -o "$RUNNER_TEMP/mini.elf"
-          avr-size "$RUNNER_TEMP/mini.elf"
+          for file in *.c single/*.c; do
+            avr-gcc -mmcu=atmega328p -Os -std=gnu99 -Wall -Wextra -Werror -Wno-unused-parameter -DHW_HAS_SYSTEM=0 \
+              -I"$RUNNER_TEMP/vm/source" -I. -c "$file" -o "$RUNNER_TEMP/avr.o" || exit 1
+          done
+          echo "ok   avr-gcc"
